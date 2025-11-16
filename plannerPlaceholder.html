@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard IoT - Monitor de Estresse</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    body{ font-family:Arial; background:#111; color:white; text-align:center; }
+    .card{
+      display:inline-block; background:#1e1e1e; padding:20px;
+      margin:10px; border-radius:10px; width:200px;
+      box-shadow:0 0 10px rgba(0,0,0,0.5);
+    }
+    button{
+      background:#008bff; color:white; padding:10px;
+      border:none; width:100%; border-radius:8px;
+    }
+  </style>
+</head>
+
+<body>
+<h1>📊 Dashboard IoT – Monitor de Estresse</h1>
+<h3>ESP32 + MQTT</h3>
+
+<div class="card">
+  <h2>Stress (%)</h2>
+  <p id="stress">--</p>
+</div>
+
+<div class="card">
+  <h2>Batimento</h2>
+  <p id="bpm">--</p>
+</div>
+
+<div class="card">
+  <h2>Temperatura</h2>
+  <p id="temp">--</p>
+</div>
+
+<div class="card">
+  <h2>Aceleração</h2>
+  <p id="acc">--</p>
+</div>
+
+<div class="card">
+  <h2>Ações</h2>
+  <button onclick="sendBreak()">Forçar Pausa</button>
+  <button onclick="resetStress()">Reset Stress</button>
+  <p id="resp">--</p>
+</div>
+
+<script>
+const client = mqtt.connect('ws://COLOQUE IP:8004/mqtt', {
+  clientId: 'dashboard_'+Math.random().toString(16).substr(2,8),
+  clean:true
+});
+
+client.on('connect', ()=>{
+  console.log("MQTT conectado!");
+
+  client.subscribe("/planner/stress_monitor/attrs/s");
+  client.subscribe("/planner/stress_monitor/attrs/b");
+  client.subscribe("/planner/stress_monitor/attrs/a");
+  client.subscribe("/planner/stress_monitor/attrs/t");
+  client.subscribe("/planner/stress_monitor/attrs");
+});
+
+client.on('message',(topic,msg)=>{
+  msg = msg.toString();
+
+  if(topic.endsWith("/s")) document.getElementById("stress").innerText = msg;
+  if(topic.endsWith("/b")) document.getElementById("bpm").innerText = msg;
+  if(topic.endsWith("/t")) document.getElementById("temp").innerText = msg+"°C";
+  if(topic.endsWith("/a")) document.getElementById("acc").innerText = msg;
+  if(topic.endsWith("/attrs")) document.getElementById("resp").innerText = msg;
+});
+
+// Funções de comando
+function sendBreak(){
+  client.publish("/planner/stress_monitor/cmd","force_break");
+}
+
+function resetStress(){
+  client.publish("/planner/stress_monitor/cmd","reset_stress");
+}
+</script>
+
+</body>
+</html>
