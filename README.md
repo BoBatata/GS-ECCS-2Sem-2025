@@ -29,7 +29,7 @@ O hardware funciona totalmente no Wokwi, e a comunicação é feita com o HiveMQ
 
 | Nome | RM |
 |------|-----------|
-| **Isabela de Deus**       | xxxxxx |
+| **Isabela de Deus Ferreira**       | 565988 |
 | **Thomaz Vasconcelos Mendes**       | 564805 |
 | **Nicolas Tetsuo Kimura**           | 565377 |
 
