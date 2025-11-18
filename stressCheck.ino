@@ -1,147 +1,170 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // Wi-Fi
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
+const char* WIFI_SSID = "Wokwi-GUEST";
+const char* WIFI_PASS = "";
 
-// MQTT AWS
-const char* mqtt_server = "COLOQUE_IP";
-const int mqtt_port = 1883;
+// HiveMQ Cloud
+const char* HIVEMQ_BROKER = "ColoqueSeuURLAqui.s1.eu.hivemq.cloud";
+const int   HIVEMQ_PORT   = 8883;
+const char* HIVEMQ_USER   = "SeuUser";
+const char* HIVEMQ_PASS   = "SuaSenha";
 
-// MQTT Tópicos
-#define TOPIC_PULSE "/TEF/device/attrs/p"
-#define TOPIC_TEMP  "/TEF/device/attrs/t"
-#define TOPIC_CMD   "/TEF/device/cmd"
-#define TOPIC_ATTRS "/TEF/device/attrs"
+// Topics mandados e recebidos.
+const char* TOPIC_STRESS  = "/planner/stress_monitor/attrs/s";
+const char* TOPIC_BPM     = "/planner/stress_monitor/attrs/b";
+const char* TOPIC_TEMP    = "/planner/stress_monitor/attrs/t";
+const char* TOPIC_GENERAL = "/planner/stress_monitor/attrs";
+const char* TOPIC_CMD     = "/planner/stress_monitor/cmd";
+const char* TOPIC_XP      = "/planner/stress_monitor/attrs/xp";   // XP recebido
 
-// Objetos
-WiFiClient espClient;
-PubSubClient client(espClient);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Sensores e atuadores
-const int pulsePin = 34;
-const int ledPin = 2;
-const int buzzerPin = 5;
+int LED_PIN    = 4;
+int BUZZER_PIN = 5;
+int POT_PIN    = 34; // Stress está sendo medido no potenciômetro
 
-int pulseValue = 0;
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
 
-void setup_wifi() {
-  lcd.clear();
-  lcd.print("Conectando WiFi");
-  WiFi.begin(ssid, password);
+bool paused = false;
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(400);
-    Serial.print(".");
+// Reconectar com o HiveMQ
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Conectando ao HiveMQ...");
+    if (client.connect("ESP32-StressMonitor", HIVEMQ_USER, HIVEMQ_PASS)) {
+      Serial.println("OK!");
+      client.subscribe(TOPIC_CMD);
+    } else {
+      Serial.print("Falhou (rc=");
+      Serial.print(client.state());
+      Serial.println(") tentando em 5s...");
+      delay(5000);
+    }
   }
-  lcd.clear();
-  lcd.print("WiFi OK");
-  delay(600);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
   String msg = "";
   for (int i = 0; i < length; i++) msg += (char)payload[i];
 
-  if (msg == "led_on") {
-    digitalWrite(ledPin, HIGH);
-    lcd.clear();
-    lcd.print("LED LIGADO");
-    client.publish(TOPIC_ATTRS, "LED ligado");
-  }
-  else if (msg == "led_off") {
-    digitalWrite(ledPin, LOW);
-    lcd.clear();
-    lcd.print("LED DESLIGADO");
-    client.publish(TOPIC_ATTRS, "LED desligado");
-  }
-}
+  Serial.print("CMD recebido: ");
+  Serial.println(msg);
 
-void reconnect() {
-  while (!client.connected()) {
+  // Pausar dispositivo.
+  if (msg == "pause") {
+    paused = true;
     lcd.clear();
-    lcd.print("MQTT...");
-    if (client.connect("ESP32_Client")) {
-      lcd.clear();
-      lcd.print("MQTT OK");
-      client.subscribe(TOPIC_CMD);
-    } else {
-      lcd.clear();
-      lcd.print("MQTT Erro...");
-      delay(1500);
-    }
+    lcd.print("Processo PAUSADO");
+    digitalWrite(LED_PIN, LOW);
+    noTone(BUZZER_PIN);
+
+    client.publish(TOPIC_GENERAL, "Processo pausado");
+  }
+
+  // Retomar dispositivo.
+  else if (msg == "resume") {
+    paused = false;
+    lcd.clear();
+    lcd.print("Processo ativo");
+    client.publish(TOPIC_GENERAL, "Processo retomado");
+  }
+
+  // Receber XP - Isso seria via o Site Planner que mandaria para cá.
+  else if (msg.startsWith("xp:")) {
+    String xpValue = msg.substring(3);
+    lcd.clear();
+    lcd.print("XP ganho: ");
+    lcd.print(xpValue);
+
+    client.publish(TOPIC_XP, xpValue.c_str());
+    Serial.println("XP recebido: " + xpValue);
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(ledPin, OUTPUT);
-  pinMode(buzzerPin, OUTPUT);
 
   lcd.init();
   lcd.backlight();
+  lcd.print("Inicializando...");
 
-  setup_wifi();
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(POT_PIN, INPUT);
 
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  lcd.clear();
+  lcd.print("WiFi...");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
 
   lcd.clear();
-  lcd.print("Sistema Pronto");
-  delay(800);
+  lcd.print("WiFi OK");
+
+  espClient.setInsecure();
+
+  client.setServer(HIVEMQ_BROKER, HIVEMQ_PORT);
+  client.setCallback(callback);
 }
 
 void loop() {
+
   if (!client.connected()) reconnect();
   client.loop();
 
-  // Ler pulso (simulado no Wokwi como potenciômetro)
-  pulseValue = analogRead(pulsePin);
+  // Se estiver pausado, não mede stress
+  if (paused) {
+    delay(500);
+    return;
+  }
 
-  // Enviar pulso
-  char pulseStr[8];
-  dtostrf(pulseValue, 6, 2, pulseStr);
-  client.publish(TOPIC_PULSE, pulseStr);
+  // Stress via potenciômetro
+  int rawValue = analogRead(POT_PIN);
+  int stressLevel = map(rawValue, 0, 4095, 0, 100);
 
-  // Temperatura fake (porque removemos MPU)
-  float tempFake = 25.0 + (pulseValue % 20) * 0.1;
-  char tempStr[8];
-  dtostrf(tempFake, 4, 2, tempStr);
-  client.publish(TOPIC_TEMP, tempStr);
+  bool alerta = (stressLevel >= 75);
 
-  // Exibir no LCD
+  // LCD
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Pulso: ");
-  lcd.print(pulseValue);
+  lcd.print("Stress: ");
+  lcd.print(stressLevel);
 
-  lcd.setCursor(0, 1);
-  lcd.print("Temp: ");
-  lcd.print(tempFake);
-
-  // Verificar estresse
-  if (pulseValue > 200) {
-    lcd.clear();
-    lcd.print("ALTO ESTRESSE!");
+  if (alerta) {
     lcd.setCursor(0, 1);
-    lcd.print("FAZER PAUSA!");
-    digitalWrite(ledPin, HIGH);
-    tone(buzzerPin, 1200, 300);
-  }
-  else if (pulseValue > 120) {
-    lcd.clear();
-    lcd.print("Estresse:");
+    lcd.print("PAUSA sugerida");
+
+    digitalWrite(LED_PIN, HIGH);
+    tone(BUZZER_PIN, 1500, 200);
+  } else {
     lcd.setCursor(0, 1);
-    lcd.print("Moderado");
-    digitalWrite(ledPin, HIGH);
-  }
-  else {
-    digitalWrite(ledPin, LOW);
+    lcd.print("OK");
+    digitalWrite(LED_PIN, LOW);
+    noTone(BUZZER_PIN);
   }
 
-  delay(1000);
+  // Simulações extras
+  int bpm  = random(60, 110);
+  int temp = random(20, 35);
+
+  // Envio MQTT
+  client.publish(TOPIC_STRESS,  String(stressLevel).c_str());
+  client.publish(TOPIC_BPM,     String(bpm).c_str());
+  client.publish(TOPIC_TEMP,    String(temp).c_str());
+
+  if (alerta)
+    client.publish(TOPIC_GENERAL, "ALERTA: estresse alto");
+  else
+    client.publish(TOPIC_GENERAL, "Normal");
+
+  Serial.println("Telemetria enviada");
+
+  delay(2000);
 }
