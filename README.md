@@ -69,6 +69,8 @@ O dispositivo simula um Sistema de Gestão Gamificado que monitora a saúde do u
 
 # Link do Wokwi (Projeto Completamente Funcionando)
 
+<img src="./images/iotDevice.png" alt="Stress Monitor Device">
+
 <a href="https://wokwi.com/projects/447556004284048385">Medidor de Estresse</a>
 
 ## Integrantes
