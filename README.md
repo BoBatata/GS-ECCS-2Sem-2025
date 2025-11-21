@@ -1,4 +1,4 @@
-# OnnecTech
+# ConnecTech
 
 Este projeto implementa um dispositivo IoT baseado em ESP32 que monitora o nível de estresse de um usuário e integra mecânicas de gamificação, comunicação MQTT e interação com um planner gameficado.
 O sistema se conectaria com um Planner Gameficado monitorando a quantidade de pontos e estresse para sugerir pausas automáticas.
